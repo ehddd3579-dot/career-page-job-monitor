@@ -1,0 +1,16 @@
+{
+  "actorSpecification": 1,
+  "name": "lever-jobs-scraper",
+  "title": "Lever Jobs Scraper - Every Opening From Any Lever Board",
+  "description": "Pull live job openings straight from any Lever careers board via the official public API. Give it company slugs, get every role with title, team, location, commitment and apply link. No proxy, no API key.",
+  "version": "0.0",
+  "buildTag": "latest",
+  "meta": {
+    "templateId": "python-empty"
+  },
+  "dockerfile": "./Dockerfile",
+  "input": "./input_schema.json",
+  "storages": {
+    "dataset": "./dataset_schema.json"
+  }
+}
