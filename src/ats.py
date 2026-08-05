@@ -9,11 +9,14 @@ no API key.
 
 from __future__ import annotations
 
+import logging
 import re
 from datetime import datetime, timezone
 from typing import Any
 
 import httpx
+
+log = logging.getLogger("apify")
 
 _TAG = re.compile(r"<[^>]+>")
 _WS = re.compile(r"[ \t\r\f\v]+")
@@ -53,7 +56,7 @@ def as_list(value: Any) -> list:
     return value if isinstance(value, list) else []
 
 
-def collect(items: Any, build) -> list[dict]:
+def collect(items: Any, build, label: str = "") -> list[dict]:
     """Normalise raw records, skipping any single record that cannot be read.
 
     One malformed posting must never cost the caller the other 499. The builder
@@ -63,7 +66,9 @@ def collect(items: Any, build) -> list[dict]:
     caller is billed per record - so it is dropped rather than returned.
     """
     out: list[dict] = []
+    raw = 0
     for item in as_list(items):
+        raw += 1
         if not isinstance(item, dict):
             continue
         try:
@@ -75,6 +80,14 @@ def collect(items: Any, build) -> list[dict]:
         if not str(record.get("jobUrl") or "").startswith("http"):
             continue
         out.append(record)
+    dropped = raw - len(out)
+    if dropped:
+        # Silent data loss is worse than noisy logs. If a board hands us
+        # records we cannot read, say so rather than quietly under-reporting.
+        log.warning(
+            f"{label or 'board'}: skipped {dropped} of {raw} postings "
+            f"(unreadable, unlisted, or missing a title/link)"
+        )
     return out
 
 
@@ -214,7 +227,7 @@ async def greenhouse(client: httpx.AsyncClient, token: str, want_desc: bool) -> 
             description=html_to_text(item.get("content")) if want_desc else None,
         )
 
-    return collect(raw_jobs, build)
+    return collect(raw_jobs, build, f"greenhouse/{token}")
 
 
 async def lever(client: httpx.AsyncClient, token: str, want_desc: bool) -> list[dict]:
@@ -241,7 +254,7 @@ async def lever(client: httpx.AsyncClient, token: str, want_desc: bool) -> list[
             description=(item.get("descriptionPlain") if want_desc else None),
         )
 
-    return collect(data, build)
+    return collect(data, build, f"lever/{token}")
 
 
 async def ashby(client: httpx.AsyncClient, token: str, want_desc: bool) -> list[dict]:
@@ -271,7 +284,7 @@ async def ashby(client: httpx.AsyncClient, token: str, want_desc: bool) -> list[
             description=(item.get("descriptionPlain") if want_desc else None),
         )
 
-    return collect(as_dict(data).get("jobs"), build)
+    return collect(as_dict(data).get("jobs"), build, f"ashby/{token}")
 
 
 async def workable(client: httpx.AsyncClient, token: str, want_desc: bool) -> list[dict]:
@@ -298,7 +311,7 @@ async def workable(client: httpx.AsyncClient, token: str, want_desc: bool) -> li
             description=html_to_text(item.get("description")) if want_desc else None,
         )
 
-    return collect(as_dict(data).get("jobs"), build)
+    return collect(as_dict(data).get("jobs"), build, f"workable/{token}")
 
 
 async def recruitee(client: httpx.AsyncClient, token: str, want_desc: bool) -> list[dict]:
@@ -332,16 +345,17 @@ async def recruitee(client: httpx.AsyncClient, token: str, want_desc: bool) -> l
             description=html_to_text(item.get("description")) if want_desc else None,
         )
 
-    return collect(as_dict(data).get("offers"), build)
+    return collect(as_dict(data).get("offers"), build, f"recruitee/{token}")
 
 
 async def smartrecruiters(client: httpx.AsyncClient, token: str, want_desc: bool) -> list[dict]:
     url = f"https://api.smartrecruiters.com/v1/companies/{token}/postings"
-    data = await _get(client, url, params={"limit": 100})
-
     def build(item: dict) -> dict:
         loc = as_dict(item.get("location"))
-        parts = [blank(loc.get(k)) for k in ("city", "region", "country")]
+        country = blank(loc.get("country"))
+        if country and len(country) == 2:
+            country = country.upper()  # the API returns "us", humans expect "US"
+        parts = [blank(loc.get("city")), blank(loc.get("region")), country]
         posting_id = item.get("id")
         # The list endpoint returns `ref`, which is an API URL a human cannot
         # open, and omits postingUrl/applyUrl. Build the public careers link.
@@ -365,7 +379,19 @@ async def smartrecruiters(client: httpx.AsyncClient, token: str, want_desc: bool
             apply_url=item.get("applyUrl") or public_url,
         )
 
-    return collect(as_dict(data).get("content"), build)
+    # This endpoint pages at 100. Companies with thousands of openings would
+    # silently return only the first page, so walk offset until totalFound.
+    out: list[dict] = []
+    offset = 0
+    while True:
+        data = as_dict(await _get(client, url, params={"limit": 100, "offset": offset}))
+        page = as_list(data.get("content"))
+        out.extend(collect(page, build, f"smartrecruiters/{token}"))
+        offset += len(page)
+        total = data.get("totalFound")
+        if not page or not isinstance(total, int) or offset >= total or offset >= 2000:
+            break
+    return out
 
 
 ADAPTERS = {

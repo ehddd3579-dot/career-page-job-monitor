@@ -102,7 +102,14 @@ async def fetch_company(
             return [], None
         last_error = f"{name}: no jobs"
 
-    return [], last_error or "no matching job board found"
+    if ats:
+        return [], last_error or f"{ats}: no board found for this token"
+    # Auto-detection tried every platform. Reporting only the last one it
+    # touched would read like a single-platform failure, which misleads.
+    return [], (
+        f"no job board found on any of {len(DETECTION_ORDER)} supported platforms "
+        f"({', '.join(DETECTION_ORDER)})"
+    )
 
 
 # --------------------------------------------------------------------------
