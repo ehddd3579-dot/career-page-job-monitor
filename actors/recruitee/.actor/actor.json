@@ -1,0 +1,16 @@
+{
+  "actorSpecification": 1,
+  "name": "recruitee-jobs-scraper",
+  "title": "Recruitee Jobs Scraper - Every Opening From Any Recruitee Site",
+  "description": "Pull live job openings straight from any Recruitee careers site via the official public API. Give it company subdomains, get every role with title, department, location and apply link. No proxy, no API key.",
+  "version": "0.0",
+  "buildTag": "latest",
+  "meta": {
+    "templateId": "python-empty"
+  },
+  "dockerfile": "./Dockerfile",
+  "input": "./input_schema.json",
+  "storages": {
+    "dataset": "./dataset_schema.json"
+  }
+}
