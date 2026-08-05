@@ -1,8 +1,8 @@
 {
   "actorSpecification": 1,
   "name": "career-page-job-monitor",
-  "title": "Career Page Job Monitor - Greenhouse, Lever, Ashby, Workable",
-  "description": "Track job openings straight from company career pages across 6 ATS platforms. Auto-detects which ATS a company uses. No proxy, no API key.",
+  "title": "ATS Job Scraper - Greenhouse, Lever, Ashby, Workable, Recruitee",
+  "description": "You name the companies, it returns their live job openings. Auto-detects Greenhouse, Lever, Ashby, Workable, Recruitee and SmartRecruiters, and normalises all six into one schema. No proxy, no API key.",
   "version": "0.0",
   "buildTag": "latest",
   "meta": { "templateId": "python-empty" },
