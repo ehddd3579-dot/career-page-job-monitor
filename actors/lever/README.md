@@ -22,7 +22,7 @@ Lever exposes team, commitment and workplace type, so `team`, `employmentType` a
 
 ```json
 {
-  "boards": ["leverdemo", "https://jobs.lever.co/netflix"],
+  "boards": ["leverdemo"],
   "titleKeywords": ["engineer"],
   "locations": ["Remote"],
   "postedWithinDays": 7
