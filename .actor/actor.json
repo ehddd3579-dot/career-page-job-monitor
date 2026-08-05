@@ -1,0 +1,12 @@
+{
+  "actorSpecification": 1,
+  "name": "career-page-job-monitor",
+  "title": "Career Page Job Monitor - Greenhouse, Lever, Ashby, Workable",
+  "description": "Track job openings straight from company career pages across 6 ATS platforms. Auto-detects which ATS a company uses. No proxy, no API key.",
+  "version": "0.0",
+  "buildTag": "latest",
+  "meta": { "templateId": "python-empty" },
+  "dockerfile": "./Dockerfile",
+  "input": "./input_schema.json",
+  "storages": { "dataset": "./dataset_schema.json" }
+}
