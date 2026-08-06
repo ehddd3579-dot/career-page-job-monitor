@@ -1,0 +1,16 @@
+{
+  "actorSpecification": 1,
+  "name": "greenhouse-jobs-scraper",
+  "title": "Greenhouse Jobs Scraper - Every Opening From Any Greenhouse Board",
+  "description": "Pull live job openings straight from any Greenhouse job board via the official public API, with departments joined in. Give it company slugs, get every role with title, department, location and apply link. No proxy, no API key.",
+  "version": "0.0",
+  "buildTag": "latest",
+  "meta": {
+    "templateId": "python-empty"
+  },
+  "dockerfile": "./Dockerfile",
+  "input": "./input_schema.json",
+  "storages": {
+    "dataset": "./dataset_schema.json"
+  }
+}
