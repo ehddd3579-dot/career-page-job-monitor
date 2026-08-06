@@ -54,7 +54,7 @@ tries each platform until it finds the board.
 ```json
 {
   "companies": [
-    "stripe",
+    "stripe.com",
     "ashby:ramp",
     "https://jobs.lever.co/netflix",
     "https://job-boards.greenhouse.io/anthropic"
@@ -72,9 +72,15 @@ tries each platform until it finds the board.
 | You write | It understands |
 |---|---|
 | `stripe` | auto-detects the platform |
+| **`stripe.com`** | **the domain — paste your account list as-is** |
+| **`www.stripe.com`, `https://stripe.com/careers`** | **same company** |
 | `greenhouse:stripe` | forces Greenhouse |
 | `https://jobs.ashbyhq.com/ramp` | Ashby, token `ramp` |
 | `https://apply.workable.com/acme/` | Workable, token `acme` |
+
+**You do not need to look up board tokens.** Most people keep a list of company
+domains, not ATS slugs — so paste the domains. The Actor pulls the company name
+out and finds the board itself.
 
 | Field | Default | Notes |
 |---|---|---|
