@@ -56,7 +56,7 @@ tries each platform until it finds the board.
   "companies": [
     "stripe.com",
     "ashby:ramp",
-    "https://jobs.lever.co/netflix",
+    "https://jobs.lever.co/shieldai",
     "https://job-boards.greenhouse.io/anthropic"
   ],
   "titleKeywords": ["engineer", "designer"],
