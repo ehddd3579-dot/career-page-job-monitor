@@ -1,0 +1,16 @@
+{
+  "actorSpecification": 1,
+  "name": "ashby-jobs-scraper",
+  "title": "Ashby Jobs Scraper - Every Opening From Any Ashby Board",
+  "description": "Pull live job openings straight from any Ashby job board via the official public API, including published salary ranges. Give it company slugs, get every role with team, location and apply link. No proxy, no API key.",
+  "version": "0.0",
+  "buildTag": "latest",
+  "meta": {
+    "templateId": "python-empty"
+  },
+  "dockerfile": "./Dockerfile",
+  "input": "./input_schema.json",
+  "storages": {
+    "dataset": "./dataset_schema.json"
+  }
+}
