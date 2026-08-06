@@ -46,6 +46,64 @@ def blank(value: Any) -> str | None:
     return text or None
 
 
+# Domains a person is likely to paste instead of a board token.
+_SCHEME = re.compile(r"^[a-z][a-z0-9+.-]*://", re.I)
+_MULTI_TLD = {
+    "co.uk", "com.au", "co.jp", "co.kr", "com.br", "co.nz", "co.za",
+    "com.mx", "co.in", "com.sg", "co.il",
+}
+
+
+def normalize_token(raw: Any) -> str:
+    """Turn whatever a human pasted into a board token.
+
+    People keep lists of company *domains*, not ATS board slugs. Accepting
+    only the slug is the single biggest barrier to using this Actor, so
+    stripe.com, www.stripe.com, https://stripe.com/careers and jobs.stripe.com
+    all resolve to `stripe`.
+
+    Case is preserved: most platforms use lowercase slugs, but
+    SmartRecruiters identifiers are case sensitive.
+    """
+    text = str(raw or "").strip().lstrip("@")
+    if not text:
+        return ""
+    text = _SCHEME.sub("", text)
+    host = text.split("/")[0].split("?")[0].strip()
+    if "." not in host:
+        return host.strip("/")
+    host = re.sub(r"^www\.", "", host, flags=re.I)
+    labels = [l for l in host.split(".") if l]
+    if len(labels) >= 3 and ".".join(labels[-2:]).lower() in _MULTI_TLD:
+        return labels[-3]
+    if len(labels) >= 2:
+        return labels[-2]
+    return labels[0]
+
+
+def token_variants(raw: Any) -> list[str]:
+    """Ordered board-token guesses for one pasted entry.
+
+    Companies do not name their board consistently after their domain:
+    stripe.com -> "stripe", but shield.ai -> "shieldai". Trying the obvious
+    form first and the dot-stripped form second covers both without asking
+    the user to go hunting for a slug.
+    """
+    text = _SCHEME.sub("", str(raw or "").strip().lstrip("@"))
+    host = text.split("/")[0].split("?")[0].strip().strip("/")
+    out = []
+    primary = normalize_token(raw)
+    if primary:
+        out.append(primary)
+    if "." in host:
+        host = re.sub(r"^www\.", "", host, flags=re.I)
+        labels = [l for l in host.split(".") if l]
+        joined = "".join(labels)
+        if joined and joined not in out:
+            out.append(joined)
+    return out
+
+
 def as_dict(value: Any) -> dict:
     """Nested objects are not guaranteed. A board that sends a string where the
     schema promises an object must not take the whole company down."""
@@ -179,7 +237,7 @@ async def _greenhouse_departments(client: httpx.AsyncClient, token: str) -> dict
     the department filter would silently match nothing. Best effort: if the
     endpoint is unavailable we simply return no mapping.
     """
-    url = f"https://boards-api.greenhouse.io/v1/boards/{token}/departments"
+    url = f"https://boards-api.greenhouse.io/v1/boards/{token.lower()}/departments"
     try:
         data = await _get(client, url)
     except Exception:  # noqa: BLE001 - enrichment must never fail the fetch
@@ -197,7 +255,7 @@ async def _greenhouse_departments(client: httpx.AsyncClient, token: str) -> dict
 
 
 async def greenhouse(client: httpx.AsyncClient, token: str, want_desc: bool) -> list[dict]:
-    url = f"https://boards-api.greenhouse.io/v1/boards/{token}/jobs"
+    url = f"https://boards-api.greenhouse.io/v1/boards/{token.lower()}/jobs"
     params = {"content": "true"} if want_desc else None
     data = await _get(client, url, params=params)
     raw_jobs = as_list(as_dict(data).get("jobs"))
@@ -231,7 +289,7 @@ async def greenhouse(client: httpx.AsyncClient, token: str, want_desc: bool) -> 
 
 
 async def lever(client: httpx.AsyncClient, token: str, want_desc: bool) -> list[dict]:
-    url = f"https://api.lever.co/v0/postings/{token}"
+    url = f"https://api.lever.co/v0/postings/{token.lower()}"
     data = await _get(client, url, params={"mode": "json"})
 
     def build(item: dict) -> dict:
@@ -258,7 +316,7 @@ async def lever(client: httpx.AsyncClient, token: str, want_desc: bool) -> list[
 
 
 async def ashby(client: httpx.AsyncClient, token: str, want_desc: bool) -> list[dict]:
-    url = f"https://api.ashbyhq.com/posting-api/job-board/{token}"
+    url = f"https://api.ashbyhq.com/posting-api/job-board/{token.lower()}"
     data = await _get(client, url, params={"includeCompensation": "true"})
 
     def build(item: dict) -> dict | None:
@@ -288,7 +346,7 @@ async def ashby(client: httpx.AsyncClient, token: str, want_desc: bool) -> list[
 
 
 async def workable(client: httpx.AsyncClient, token: str, want_desc: bool) -> list[dict]:
-    url = f"https://apply.workable.com/api/v1/widget/accounts/{token}"
+    url = f"https://apply.workable.com/api/v1/widget/accounts/{token.lower()}"
     data = await _get(client, url, params={"details": "true"})
     company = as_dict(data).get("name")
 
@@ -315,7 +373,7 @@ async def workable(client: httpx.AsyncClient, token: str, want_desc: bool) -> li
 
 
 async def recruitee(client: httpx.AsyncClient, token: str, want_desc: bool) -> list[dict]:
-    url = f"https://{token}.recruitee.com/api/offers/"
+    url = f"https://{token.lower()}.recruitee.com/api/offers/"
     data = await _get(client, url)
 
     def build(item: dict) -> dict:
@@ -349,7 +407,6 @@ async def recruitee(client: httpx.AsyncClient, token: str, want_desc: bool) -> l
 
 
 async def smartrecruiters(client: httpx.AsyncClient, token: str, want_desc: bool) -> list[dict]:
-    url = f"https://api.smartrecruiters.com/v1/companies/{token}/postings"
     def build(item: dict) -> dict:
         loc = as_dict(item.get("location"))
         country = blank(loc.get("country"))
@@ -379,18 +436,42 @@ async def smartrecruiters(client: httpx.AsyncClient, token: str, want_desc: bool
             apply_url=item.get("applyUrl") or public_url,
         )
 
-    # This endpoint pages at 100. Companies with thousands of openings would
-    # silently return only the first page, so walk offset until totalFound.
-    out: list[dict] = []
-    offset = 0
-    while True:
+    # SmartRecruiters company identifiers are case sensitive, unlike every
+    # other platform here. A person pasting "visa" or "visa.com" should still
+    # find "Visa", so try the sensible casings before giving up.
+    candidates = [token]
+    for variant in (token.capitalize(), token.upper(), token.lower()):
+        if variant not in candidates:
+            candidates.append(variant)
+
+    resolved = None
+    last_error: Exception | None = None
+    for candidate in candidates:
+        probe = f"https://api.smartrecruiters.com/v1/companies/{candidate}/postings"
+        try:
+            first = as_dict(await _get(client, probe, params={"limit": 100, "offset": 0}))
+        except Exception as exc:  # noqa: BLE001 - try the next casing
+            last_error = exc
+            continue
+        resolved, url = candidate, probe
+        break
+    if resolved is None:
+        raise last_error if last_error else httpx.HTTPError("smartrecruiters: no match")
+
+    out: list[dict] = collect(as_list(first.get("content")), build,
+                              f"smartrecruiters/{resolved}")
+    offset = len(as_list(first.get("content")))
+    total = first.get("totalFound")
+    if not out and not offset:
+        return out
+    while isinstance(total, int) and offset < total and offset < 2000:
         data = as_dict(await _get(client, url, params={"limit": 100, "offset": offset}))
         page = as_list(data.get("content"))
-        out.extend(collect(page, build, f"smartrecruiters/{token}"))
+        if not page:
+            break
+        out.extend(collect(page, build, f"smartrecruiters/{resolved}"))
         offset += len(page)
         total = data.get("totalFound")
-        if not page or not isinstance(total, int) or offset >= total or offset >= 2000:
-            break
     return out
 
 

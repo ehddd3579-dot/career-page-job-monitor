@@ -17,7 +17,7 @@ from typing import Any
 import httpx
 from apify import Actor
 
-from .ats import ADAPTERS, DETECTION_ORDER, REMOTE_HINT
+from .ats import ADAPTERS, DETECTION_ORDER, REMOTE_HINT, normalize_token, token_variants
 
 # --------------------------------------------------------------------------
 # input parsing
@@ -64,10 +64,24 @@ def parse_target(raw: Any) -> tuple[str | None, str]:
     if ":" in text and not text.startswith("http"):
         head, _, tail = text.partition(":")
         if head.strip().lower() in ADAPTERS:
-            return head.strip().lower(), tail.strip()
+            return head.strip().lower(), normalize_token(tail)
 
-    return None, text.lstrip("@").strip("/")
+    # Not a known board URL. People paste company domains far more often than
+    # board slugs, so pull the company name out of whatever this is.
+    return None, normalize_token(text)
 
+
+def target_variants(raw: Any, token: str) -> list[str]:
+    """Fallback spellings to try if `token` finds nothing.
+
+    An explicit board URL is unambiguous, so never second-guess it. Only a
+    bare name or domain gets alternative spellings.
+    """
+    text = str(raw)
+    for _, pattern in _BOARD_URL_PATTERNS:
+        if pattern.search(text):
+            return []
+    return [v for v in token_variants(raw) if v and v != token]
 
 # --------------------------------------------------------------------------
 # fetching
@@ -75,9 +89,15 @@ def parse_target(raw: Any) -> tuple[str | None, str]:
 
 
 async def fetch_company(
-    client: httpx.AsyncClient, ats: str | None, token: str, want_desc: bool
+    client: httpx.AsyncClient, ats: str | None, token: str, want_desc: bool,
+    alt_tokens: list[str] | None = None,
 ) -> tuple[list[dict], str | None]:
-    """Fetch one company's jobs. Auto-detects the ATS when it is not given."""
+    """Fetch one company's jobs. Auto-detects the ATS when it is not given.
+
+    `alt_tokens` are fallback spellings of the same company (shield.ai also
+    files its board under "shieldai"). They are only tried after the primary
+    token has missed on every platform, so the common case costs nothing.
+    """
     order = [ats] if ats else DETECTION_ORDER
     last_error: str | None = None
 
@@ -101,6 +121,13 @@ async def fetch_company(
         if ats:
             return [], None
         last_error = f"{name}: no jobs"
+
+    for alt in (alt_tokens or []):
+        if alt == token:
+            continue
+        jobs, error = await fetch_company(client, ats, alt, want_desc)
+        if jobs:
+            return jobs, None
 
     if ats:
         return [], last_error or f"{ats}: no board found for this token"
@@ -155,8 +182,12 @@ async def main() -> None:
     async with Actor:
         cfg = await Actor.get_input() or {}
 
-        targets = [parse_target(entry) for entry in (cfg.get("companies") or [])]
-        targets = [(ats, token) for ats, token in targets if token]
+        raw_entries = cfg.get("companies") or []
+        targets = []
+        for entry in raw_entries:
+            ats, token = parse_target(entry)
+            if token:
+                targets.append((ats, token, target_variants(entry, token)))
         if not targets:
             raise ValueError(
                 "Input 'companies' is empty. Add company board tokens, for example "
@@ -193,9 +224,11 @@ async def main() -> None:
             },
         ) as client:
 
-            async def handle(ats: str | None, token: str) -> None:
+            async def handle(ats: str | None, token: str, alts: list[str]) -> None:
                 async with semaphore:
-                    jobs, error = await fetch_company(client, ats, token, want_desc)
+                    jobs, error = await fetch_company(
+                        client, ats, token, want_desc, alts
+                    )
 
                 if error:
                     totals["companies_failed"] += 1
@@ -248,7 +281,7 @@ async def main() -> None:
 
                 Actor.log.info(f"{token}: {kept} job(s) kept out of {len(jobs)} found")
 
-            await asyncio.gather(*(handle(a, t) for a, t in targets))
+            await asyncio.gather(*(handle(a, t, v) for a, t, v in targets))
 
         await Actor.set_status_message(
             f"Done. {totals['jobs']} jobs from {totals['companies_ok']} companies "
