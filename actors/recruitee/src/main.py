@@ -16,7 +16,7 @@ from typing import Any
 import httpx
 from apify import Actor
 
-from .ats import ADAPTERS, REMOTE_HINT
+from .ats import ADAPTERS, REMOTE_HINT, normalize_token, token_variants
 
 ATS = "recruitee"
 _TOKEN_FROM_URL = re.compile(r"([\w-]+)\.recruitee\.com", re.I)
@@ -34,7 +34,8 @@ def parse_board(raw: Any) -> str:
     hit = _TOKEN_FROM_URL.search(text)
     if hit:
         return hit.group(1)
-    return text.lstrip("@").strip("/")
+    # People paste company domains, not board slugs. stripe.com -> stripe
+    return normalize_token(text)
 
 
 def compile_terms(terms: list) -> list:
@@ -69,8 +70,8 @@ async def main() -> None:
     async with Actor:
         cfg = await Actor.get_input() or {}
 
-        boards = [parse_board(b) for b in (cfg.get("boards") or [])]
-        boards = [b for b in boards if b]
+        raw_entries = [b for b in (cfg.get("boards") or []) if parse_board(b)]
+        boards = [parse_board(b) for b in raw_entries]
         if not boards:
             raise ValueError(
                 "Input 'boards' is empty. Add Recruitee board tokens - the subdomain in <company>.recruitee.com."
@@ -105,15 +106,29 @@ async def main() -> None:
             },
         ) as client:
 
-            async def handle(token: str) -> None:
+            async def handle(entry) -> None:
+                # A pasted domain may not match the board slug exactly
+                # (shield.ai files its board as "shieldai"), so try the
+                # sensible spellings before reporting a miss.
+                primary = parse_board(entry)
+                tries = [primary]
+                if not _TOKEN_FROM_URL.search(str(entry)):
+                    for guess in token_variants(entry):
+                        if guess and guess not in tries:
+                            tries.append(guess)
+                token, jobs, error = primary, [], None
                 async with semaphore:
-                    try:
-                        jobs = await adapter(client, token, want_desc)
-                        error = None
-                    except httpx.HTTPStatusError as exc:
-                        jobs, error = [], "HTTP %d" % exc.response.status_code
-                    except Exception as exc:  # noqa: BLE001
-                        jobs, error = [], type(exc).__name__
+                    for candidate in tries:
+                        try:
+                            jobs = await adapter(client, candidate, want_desc)
+                            error = None
+                        except httpx.HTTPStatusError as exc:
+                            jobs, error = [], "HTTP %d" % exc.response.status_code
+                        except Exception as exc:  # noqa: BLE001
+                            jobs, error = [], type(exc).__name__
+                        if jobs:
+                            token = candidate
+                            break
 
                 if error:
                     totals["failed"] += 1
@@ -161,7 +176,7 @@ async def main() -> None:
 
                 Actor.log.info("%s: %d job(s) kept out of %d found" % (token, kept, len(jobs)))
 
-            await asyncio.gather(*(handle(t) for t in boards))
+            await asyncio.gather(*(handle(e) for e in raw_entries))
 
         await Actor.set_status_message(
             "Done. %d jobs from %d Recruitee board(s) (%d not found)."
