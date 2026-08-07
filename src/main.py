@@ -19,6 +19,7 @@ from apify import Actor
 
 from .ats import ADAPTERS, DETECTION_ORDER, REMOTE_HINT, normalize_token, token_variants
 from .delta import DeltaTracker
+from .signal import summarise
 
 # --------------------------------------------------------------------------
 # input parsing
@@ -205,6 +206,13 @@ async def main() -> None:
         max_per_company = int(cfg.get("maxJobsPerCompany", 0)) or None
         posted_days = int(cfg.get("postedWithinDays", 0)) or None
         concurrency = max(1, min(int(cfg.get("concurrency", 5)), 20))
+        # "jobs" is one row per opening, "companies" is one row per account,
+        # "both" is the job rows followed by the summaries.
+        output_mode = str(cfg.get("outputMode", "jobs")).strip().lower()
+        if output_mode not in ("jobs", "companies", "both"):
+            output_mode = "jobs"
+        want_jobs = output_mode in ("jobs", "both")
+        want_summary = output_mode in ("companies", "both")
 
         # The snapshot is keyed on everything that changes which jobs qualify,
         # so a filter tweak starts a clean baseline instead of reporting the
@@ -234,6 +242,7 @@ async def main() -> None:
 
         semaphore = asyncio.Semaphore(concurrency)
         totals = {"jobs": 0, "companies_ok": 0, "companies_failed": 0}
+        summaries: list[dict] = []
 
         async with httpx.AsyncClient(
             timeout=httpx.Timeout(45.0),
@@ -268,6 +277,8 @@ async def main() -> None:
 
                 totals["companies_ok"] += 1
                 kept = 0
+                matched: list[dict] = []
+                new_ids: set[str] = set()
                 if max_per_company and delta.enabled:
                     # A cap keeps the first N in whatever order the board's API
                     # happened to return. That order is not guaranteed stable,
@@ -302,23 +313,57 @@ async def main() -> None:
                         item.pop("description", None)
 
                     kept += 1
-                    # `see` records the job either way; it returns False only
-                    # for a job we already reported on an earlier run.
-                    if not delta.see(item):
+                    # The summary describes what passed the caller's filters,
+                    # so it is built from the same set the job rows come from -
+                    # including in delta mode, where a role that is still open
+                    # but unchanged is part of the picture even though it is
+                    # not worth a row of its own.
+                    matched.append(item)
+                    is_new = delta.see(item)
+                    if is_new:
+                        new_ids.add(item["globalId"])
+                    if not (want_jobs and is_new):
                         continue
 
                     await Actor.push_data(item)
                     await charge("apify-default-dataset-item")
                     totals["jobs"] += 1
 
+                if want_summary:
+                    summaries.append(summarise(
+                        company=(matched[0].get("companyName") if matched else token),
+                        token=token, ats=ats or (matched[0].get("ats") if matched else None),
+                        jobs=matched,
+                        new_ids=new_ids if delta.enabled else None,
+                        closed_count=None,   # filled in once every board is known
+                    ))
+
                 Actor.log.info(f"{token}: {kept} job(s) kept out of {len(jobs)} found")
 
             await asyncio.gather(*(handle(a, t, v) for a, t, v in targets))
 
         closed = delta.closed()
-        for row in closed:
-            await Actor.push_data(row)
-            await charge("apify-default-dataset-item")
+        if want_jobs:
+            for row in closed:
+                await Actor.push_data(row)
+                await charge("apify-default-dataset-item")
+
+        if want_summary:
+            # Closed roles are only known once every board has been read, so
+            # the count is attached here rather than inside handle().
+            per_company: dict[str, int] = {}
+            for row in closed:
+                key = str(row.get("boardToken") or "")
+                per_company[key] = per_company.get(key, 0) + 1
+            for row in summaries:
+                if delta.enabled:
+                    shut = per_company.get(str(row.get("boardToken") or ""), 0)
+                    row["closedRoles"] = shut
+                    if row["newRoles"] is not None:
+                        row["netChange"] = row["newRoles"] - shut
+                await Actor.push_data(row)
+                await charge("apify-default-dataset-item")
+
         await delta.save()
 
         if not delta.enabled:
@@ -337,4 +382,5 @@ async def main() -> None:
                 f"{totals['companies_ok']} companies."
             )
         await Actor.set_status_message(summary)
+
 
