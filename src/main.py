@@ -142,6 +142,31 @@ async def fetch_company(
     )
 
 
+# Big platforms this Actor deliberately does not read. Naming them turns
+# "nothing found" into an explanation: NVIDIA is not missing from the internet,
+# it is on Workday. Without this the honest answer reads like a broken tool.
+UNSUPPORTED = "Workday, Taleo, iCIMS, SuccessFactors, BambooHR, Personio or an in-house careers page"
+
+
+def miss_hint(raw: Any, ats: str | None) -> str:
+    """What to tell someone whose company came back empty.
+
+    Never "go look up the board token". Not having to do that is the whole
+    point of this Actor, and saying it at the moment of failure is the worst
+    possible time to go back on it.
+    """
+    if ats == "smartrecruiters":
+        return ("SmartRecruiters identifiers are case sensitive and often are not the "
+                "plain company name - Bosch is BoschGroup, Ubisoft is Ubisoft2. Copy the "
+                "exact name from careers.smartrecruiters.com/<Company>.")
+    if ats:
+        return (f"No {ats} board answered for this entry. If the company is on a different "
+                f"platform, remove the '{ats}:' prefix and let it auto-detect.")
+    return (f"Either the company is on a platform this Actor does not read ({UNSUPPORTED}), "
+            f"or the board is private. Pasting the full careers URL usually resolves it - "
+            f"the link a job posting sits on is enough.")
+
+
 # --------------------------------------------------------------------------
 # filtering
 # --------------------------------------------------------------------------
@@ -264,13 +289,11 @@ async def main() -> None:
                     Actor.log.warning(f"{token}: {error}")
                     await Actor.push_data(
                         {
+                            "recordType": "notFound",
                             "boardToken": token,
                             "ats": ats,
                             "error": error,
-                            "hint": (
-                                "Check the board token. It is the company slug in their "
-                                "careers URL, e.g. boards.greenhouse.io/<token>."
-                            ),
+                            "hint": miss_hint(token, ats),
                         }
                     )
                     return
@@ -382,5 +405,6 @@ async def main() -> None:
                 f"{totals['companies_ok']} companies."
             )
         await Actor.set_status_message(summary)
+
 
 
