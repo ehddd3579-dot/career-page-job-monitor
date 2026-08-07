@@ -18,9 +18,23 @@ from apify import Actor
 
 from .ats import ADAPTERS, REMOTE_HINT, normalize_token, token_variants
 from .delta import DeltaTracker
+from .signal import summarise
 
 ATS = "greenhouse"
 _TOKEN_FROM_URL = re.compile(r"(?:job-boards|boards)\.greenhouse\.io/([\w.-]+)", re.I)
+
+# What to say when a board cannot be found. Never "go look up the board
+# token": not having to do that is this Actor's whole point, and repeating it
+# at the moment of failure is the worst possible time to go back on it. Name
+# the platforms this Actor does not read instead, so "nothing found" reads as
+# an explanation rather than a broken tool.
+MISS_HINT = (
+    "No Greenhouse board answered for this entry. The company may be on a platform "
+    "this Actor does not read (Workday, Taleo, iCIMS, SuccessFactors, BambooHR, "
+    "Personio or an in-house careers page), or the board may be private. "
+    "Pasting the full careers URL usually resolves it - the link a job posting "
+    "sits on is enough. The token is the company slug in job-boards.greenhouse.io/<company>."
+)
 
 
 def parse_board(raw: Any) -> str:
@@ -87,6 +101,13 @@ async def main() -> None:
         max_per_board = int(cfg.get("maxJobsPerBoard", 0)) or None
         posted_days = int(cfg.get("postedWithinDays", 0)) or None
         concurrency = max(1, min(int(cfg.get("concurrency", 5)), 20))
+        # "jobs" is one row per opening, "companies" is one row per board,
+        # "both" is the job rows followed by the summaries.
+        output_mode = str(cfg.get("outputMode", "jobs")).strip().lower()
+        if output_mode not in ("jobs", "companies", "both"):
+            output_mode = "jobs"
+        want_jobs = output_mode in ("jobs", "both")
+        want_summary = output_mode in ("companies", "both")
 
         # Keyed on everything that changes which jobs qualify, so tweaking a
         # filter starts a clean baseline instead of reporting the jobs you
@@ -116,6 +137,7 @@ async def main() -> None:
         adapter = ADAPTERS[ATS]
         semaphore = asyncio.Semaphore(concurrency)
         totals = {"jobs": 0, "ok": 0, "failed": 0}
+        summaries = []
 
         async with httpx.AsyncClient(
             timeout=httpx.Timeout(45.0),
@@ -150,19 +172,36 @@ async def main() -> None:
                             token = candidate
                             break
 
+                # SmartRecruiters answers HTTP 200 with an empty board for an
+                # identifier that does not exist - verified live, the response
+                # is identical to a real company with nothing open, and no
+                # other public endpoint separates them. Without this the Actor
+                # could never report a bad identifier at all: every typo would
+                # come back as a cheerful "0 jobs found".
+                if not jobs and error is None and ATS == "smartrecruiters":
+                    error = (
+                        "the board came back empty, which is also how "
+                        "SmartRecruiters answers an identifier that does not "
+                        "exist. Identifiers are case sensitive: Bosch is "
+                        "BoschGroup, Ubisoft is Ubisoft2."
+                    )
+
                 if error:
                     totals["failed"] += 1
                     Actor.log.warning("%s: %s" % (token, error))
                     await Actor.push_data({
+                        "recordType": "notFound",
                         "boardToken": token,
                         "ats": ATS,
                         "error": error,
-                        "hint": "Check the token - it is the company slug in job-boards.greenhouse.io/<company>.",
+                        "hint": MISS_HINT,
                     })
                     return
 
                 totals["ok"] += 1
                 kept = 0
+                matched = []
+                new_ids = set()
                 if max_per_board and delta.enabled:
                     # A cap keeps the first N in whatever order the board's API
                     # happened to return. That order is not guaranteed stable,
@@ -197,23 +236,52 @@ async def main() -> None:
                         item.pop("description", None)
 
                     kept += 1
-                    # `see` records the job either way; it returns False only
-                    # for a job we already reported on an earlier run.
-                    if not delta.see(item):
+                    # The summary describes what passed the caller's filters,
+                    # so it is built from the same set the job rows come from.
+                    matched.append(item)
+                    is_new = delta.see(item)
+                    if is_new:
+                        new_ids.add(item["globalId"])
+                    if not (want_jobs and is_new):
                         continue
 
                     await Actor.push_data(item)
                     await charge("apify-default-dataset-item")
                     totals["jobs"] += 1
 
+                if want_summary:
+                    summaries.append(summarise(
+                        company=(matched[0].get("companyName") if matched else token),
+                        token=token, ats=ATS, jobs=matched,
+                        new_ids=new_ids if delta.enabled else None,
+                        closed_count=None,
+                    ))
+
                 Actor.log.info("%s: %d job(s) kept out of %d found" % (token, kept, len(jobs)))
 
             await asyncio.gather(*(handle(e) for e in raw_entries))
 
         closed = delta.closed()
-        for row in closed:
-            await Actor.push_data(row)
-            await charge("apify-default-dataset-item")
+        if want_jobs:
+            for row in closed:
+                await Actor.push_data(row)
+                await charge("apify-default-dataset-item")
+
+        if want_summary:
+            # Closed roles are only known once every board has been read.
+            per_board = {}
+            for row in closed:
+                key = str(row.get("boardToken") or "")
+                per_board[key] = per_board.get(key, 0) + 1
+            for row in summaries:
+                if delta.enabled:
+                    shut = per_board.get(str(row.get("boardToken") or ""), 0)
+                    row["closedRoles"] = shut
+                    if row["newRoles"] is not None:
+                        row["netChange"] = row["newRoles"] - shut
+                await Actor.push_data(row)
+                await charge("apify-default-dataset-item")
+
         await delta.save()
 
         if not delta.enabled:
@@ -227,5 +295,6 @@ async def main() -> None:
             summary = ("%d new, %d closed, across %d Greenhouse board(s)."
                        % (totals["jobs"], len(closed), totals["ok"]))
         await Actor.set_status_message(summary)
+
 
 
