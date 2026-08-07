@@ -1,0 +1,17 @@
+{
+  "actorSpecification": 1,
+  "name": "smartrecruiters-jobs-scraper",
+  "title": "SmartRecruiters Jobs Scraper - Every Opening From Any Company",
+  "description": "A company that is hiring is a company that is spending. Pull every opening from any SmartRecruiters careers site via the official public API, paging through the whole board so large employers come back complete, not truncated.",
+  "version": "0.0",
+  "buildTag": "latest",
+  "meta": {
+    "templateId": "python-empty"
+  },
+  "dockerfile": "./Dockerfile",
+  "input": "./input_schema.json",
+  "storages": {
+    "dataset": "./dataset_schema.json"
+  }
+}
+
