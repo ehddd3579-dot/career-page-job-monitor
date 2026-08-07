@@ -74,6 +74,14 @@ _ROLE_FAMILIES: list[tuple[str, re.Pattern]] = [
         r"coordinator|specialist|events)", re.I)),
 ]
 
+# Titles that carry "manager" without managing anyone. Counting these as
+# management is how a board like Anthropic's ends up looking 32% managerial:
+# of 125 hits, a third were Account, Program and Contracts Managers, which are
+# individual contributors everywhere. Checked against the live board.
+_IC_MANAGER = re.compile(
+    r"\b(account|program|project|product|contracts?|community|customer success)\s+"
+    r"(programs?\s+)?manager", re.I)
+
 # Checked in this order: a "Senior Director" is leadership, not senior.
 _SENIORITY: list[tuple[str, re.Pattern]] = [
     ("leadership", re.compile(r"\b(chief|cto|ceo|cfo|coo|cmo|vp|vice president|"
@@ -99,6 +107,12 @@ def role_family(title: str | None) -> str:
 def seniority(title: str | None) -> str:
     for name, pattern in _SENIORITY:
         if title and pattern.search(title):
+            if name == "management" and _IC_MANAGER.search(title):
+                # "Manager" in the title, nobody reporting to them. Keep
+                # checking the remaining levels rather than stopping, so a
+                # Senior Account Manager still lands in `senior` instead of
+                # being flattened to mid.
+                continue
             return name
     # Not "junior". A title with no level word is most often a normal
     # individual-contributor role, and guessing junior would understate a
@@ -173,4 +187,5 @@ def summarise(
         "seniorityMix": _top(levels),
         "sampleTitles": [j.get("title") for j in jobs[:SAMPLE_TITLES] if j.get("title")],
     }
+
 
