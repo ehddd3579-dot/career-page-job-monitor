@@ -199,6 +199,10 @@ def job(
     if is_remote is None:
         is_remote = bool(loc and REMOTE_HINT.search(loc))
     return {
+        # A single run can now emit job rows, company summaries and
+        # not-found rows into one dataset. Exported to CSV that is a ragged
+        # sheet unless every row says which kind it is.
+        "recordType": "job",
         "ats": ats,
         "boardToken": token,
         "companyName": blank(company) or token,
@@ -486,4 +490,5 @@ ADAPTERS = {
 
 # Order matters for auto-detection: cheapest and most common first.
 DETECTION_ORDER = ["greenhouse", "ashby", "lever", "workable", "recruitee", "smartrecruiters"]
+
 
