@@ -18,6 +18,7 @@ import httpx
 from apify import Actor
 
 from .ats import ADAPTERS, DETECTION_ORDER, REMOTE_HINT, normalize_token, token_variants
+from .delta import DeltaTracker
 
 # --------------------------------------------------------------------------
 # input parsing
@@ -41,7 +42,8 @@ def parse_target(raw: Any) -> tuple[str | None, str]:
       "stripe"                     -> (None, "stripe")          auto-detect
       "greenhouse:stripe"          -> ("greenhouse", "stripe")
       "https://jobs.ashbyhq.com/ramp" -> ("ashby", "ramp")
-      {"ats": "lever", "token": "netflix"}
+      "stripe.com"                 -> (None, "stripe")           domain accepted
+      {"ats": "lever", "token": "shieldai"}
     """
     if raw is None:
         return None, ""
@@ -204,6 +206,24 @@ async def main() -> None:
         posted_days = int(cfg.get("postedWithinDays", 0)) or None
         concurrency = max(1, min(int(cfg.get("concurrency", 5)), 20))
 
+        # The snapshot is keyed on everything that changes which jobs qualify,
+        # so a filter tweak starts a clean baseline instead of reporting the
+        # jobs you stopped asking about as newly closed.
+        delta = DeltaTracker(
+            enabled=cfg.get("onlyNewSinceLastRun", False),
+            config={
+                "targets": sorted("%s:%s" % (a or "auto", t) for a, t, _ in targets),
+                "titleKeywords": cfg.get("titleKeywords") or [],
+                "excludeKeywords": cfg.get("excludeKeywords") or [],
+                "locations": cfg.get("locations") or [],
+                "departments": cfg.get("departments") or [],
+                "remoteOnly": remote_only,
+                "postedWithinDays": posted_days,
+                "maxJobsPerCompany": max_per_company,
+            },
+        )
+        await delta.load()
+
         cutoff = (
             datetime.now(timezone.utc) - timedelta(days=posted_days)
             if posted_days
@@ -248,6 +268,13 @@ async def main() -> None:
 
                 totals["companies_ok"] += 1
                 kept = 0
+                if max_per_company and delta.enabled:
+                    # A cap keeps the first N in whatever order the board's API
+                    # happened to return. That order is not guaranteed stable,
+                    # so between runs the capped set can shift and the diff
+                    # invents jobs that opened and closed. Sorting first makes
+                    # the same N jobs qualify every run.
+                    jobs = sorted(jobs, key=lambda j: str(j.get("jobId") or ""))
                 for item in jobs:
                     if max_per_company and kept >= max_per_company:
                         break
@@ -274,16 +301,40 @@ async def main() -> None:
                     if not want_desc:
                         item.pop("description", None)
 
+                    kept += 1
+                    # `see` records the job either way; it returns False only
+                    # for a job we already reported on an earlier run.
+                    if not delta.see(item):
+                        continue
+
                     await Actor.push_data(item)
                     await charge("apify-default-dataset-item")
-                    kept += 1
                     totals["jobs"] += 1
 
                 Actor.log.info(f"{token}: {kept} job(s) kept out of {len(jobs)} found")
 
             await asyncio.gather(*(handle(a, t, v) for a, t, v in targets))
 
-        await Actor.set_status_message(
-            f"Done. {totals['jobs']} jobs from {totals['companies_ok']} companies "
-            f"({totals['companies_failed']} not found)."
-        )
+        closed = delta.closed()
+        for row in closed:
+            await Actor.push_data(row)
+            await charge("apify-default-dataset-item")
+        await delta.save()
+
+        if not delta.enabled:
+            summary = (
+                f"Done. {totals['jobs']} jobs from {totals['companies_ok']} companies "
+                f"({totals['companies_failed']} not found)."
+            )
+        elif delta.is_baseline:
+            summary = (
+                f"Baseline recorded: {totals['jobs']} jobs from "
+                f"{totals['companies_ok']} companies. The next run returns only changes."
+            )
+        else:
+            summary = (
+                f"{totals['jobs']} new, {len(closed)} closed, across "
+                f"{totals['companies_ok']} companies."
+            )
+        await Actor.set_status_message(summary)
+
