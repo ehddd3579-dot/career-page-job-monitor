@@ -171,6 +171,7 @@ class DeltaTracker:
             if gid in self.current:
                 continue
             row = dict(remembered)
+            row["recordType"] = "job"
             row["globalId"] = gid
             row["isClosed"] = True
             rows.append(row)
@@ -194,6 +195,7 @@ class DeltaTracker:
                 "Could not save the snapshot (%s). The next run will start a "
                 "fresh baseline." % type(exc).__name__
             )
+
 
 
 
