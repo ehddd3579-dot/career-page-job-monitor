@@ -91,6 +91,15 @@ def target_variants(raw: Any, token: str) -> list[str]:
 # --------------------------------------------------------------------------
 
 
+SR_AMBIGUOUS = (
+    "smartrecruiters: the board came back empty. SmartRecruiters answers an "
+    "identifier that does not exist exactly the same way it answers a company "
+    "with nothing open, so this is more likely a spelling or capitalisation "
+    "problem than a company that has stopped hiring. Identifiers are case "
+    "sensitive: Bosch is BoschGroup, Ubisoft is Ubisoft2."
+)
+
+
 async def fetch_company(
     client: httpx.AsyncClient, ats: str | None, token: str, want_desc: bool,
     alt_tokens: list[str] | None = None,
@@ -120,8 +129,18 @@ async def fetch_company(
 
         if jobs:
             return jobs, None
-        # A valid board with zero openings is a real answer, not a miss.
+        # A valid board with zero openings is a real answer, not a miss -
+        # everywhere except SmartRecruiters.
+        #
+        # Verified against the live API: `acme-nope-xyz-123` returns
+        # HTTP 200 with `totalFound: 0`, byte for byte what a real company
+        # with nothing open returns. There is no companies endpoint that
+        # separates the two - it 404s for real identifiers as well. So the
+        # platform genuinely cannot tell us, and answering "no openings"
+        # would be a confident wrong answer to someone who simply mistyped.
         if ats:
+            if name == "smartrecruiters":
+                return [], SR_AMBIGUOUS
             return [], None
         last_error = f"{name}: no jobs"
 
@@ -405,6 +424,7 @@ async def main() -> None:
                 f"{totals['companies_ok']} companies."
             )
         await Actor.set_status_message(summary)
+
 
 
 
