@@ -1,0 +1,17 @@
+{
+  "actorSpecification": 1,
+  "name": "workable-jobs-scraper",
+  "title": "Workable Jobs Scraper - Every Opening From Any Workable Board",
+  "description": "A company that is hiring is a company that is spending. Pull live openings from any Workable careers page via the official public API - paste company domains, no board slugs to look up. Department, location, apply link.",
+  "version": "0.0",
+  "buildTag": "latest",
+  "meta": {
+    "templateId": "python-empty"
+  },
+  "dockerfile": "./Dockerfile",
+  "input": "./input_schema.json",
+  "storages": {
+    "dataset": "./dataset_schema.json"
+  }
+}
+
