@@ -16,7 +16,8 @@ from typing import Any
 import httpx
 from apify import Actor
 
-from .ats import ADAPTERS, REMOTE_HINT
+from .ats import ADAPTERS, REMOTE_HINT, normalize_token, token_variants
+from .delta import DeltaTracker
 
 ATS = "greenhouse"
 _TOKEN_FROM_URL = re.compile(r"(?:job-boards|boards)\.greenhouse\.io/([\w.-]+)", re.I)
@@ -34,7 +35,8 @@ def parse_board(raw: Any) -> str:
     hit = _TOKEN_FROM_URL.search(text)
     if hit:
         return hit.group(1)
-    return text.lstrip("@").strip("/")
+    # People paste company domains, not board slugs. stripe.com -> stripe
+    return normalize_token(text)
 
 
 def compile_terms(terms: list) -> list:
@@ -69,8 +71,8 @@ async def main() -> None:
     async with Actor:
         cfg = await Actor.get_input() or {}
 
-        boards = [parse_board(b) for b in (cfg.get("boards") or [])]
-        boards = [b for b in boards if b]
+        raw_entries = [b for b in (cfg.get("boards") or []) if parse_board(b)]
+        boards = [parse_board(b) for b in raw_entries]
         if not boards:
             raise ValueError(
                 "Input 'boards' is empty. Add Greenhouse board tokens - the company slug in job-boards.greenhouse.io/<company>."
@@ -85,6 +87,25 @@ async def main() -> None:
         max_per_board = int(cfg.get("maxJobsPerBoard", 0)) or None
         posted_days = int(cfg.get("postedWithinDays", 0)) or None
         concurrency = max(1, min(int(cfg.get("concurrency", 5)), 20))
+
+        # Keyed on everything that changes which jobs qualify, so tweaking a
+        # filter starts a clean baseline instead of reporting the jobs you
+        # stopped asking about as newly closed.
+        delta = DeltaTracker(
+            enabled=cfg.get("onlyNewSinceLastRun", False),
+            config={
+                "ats": ATS,
+                "boards": sorted(boards),
+                "titleKeywords": cfg.get("titleKeywords") or [],
+                "excludeKeywords": cfg.get("excludeKeywords") or [],
+                "locations": cfg.get("locations") or [],
+                "departments": cfg.get("departments") or [],
+                "remoteOnly": remote_only,
+                "postedWithinDays": posted_days,
+                "maxJobsPerBoard": max_per_board,
+            },
+        )
+        await delta.load()
 
         cutoff = (
             datetime.now(timezone.utc) - timedelta(days=posted_days)
@@ -105,15 +126,29 @@ async def main() -> None:
             },
         ) as client:
 
-            async def handle(token: str) -> None:
+            async def handle(entry) -> None:
+                # A pasted domain may not match the board slug exactly
+                # (shield.ai files its board as "shieldai"), so try the
+                # sensible spellings before reporting a miss.
+                primary = parse_board(entry)
+                tries = [primary]
+                if not _TOKEN_FROM_URL.search(str(entry)):
+                    for guess in token_variants(entry):
+                        if guess and guess not in tries:
+                            tries.append(guess)
+                token, jobs, error = primary, [], None
                 async with semaphore:
-                    try:
-                        jobs = await adapter(client, token, want_desc)
-                        error = None
-                    except httpx.HTTPStatusError as exc:
-                        jobs, error = [], "HTTP %d" % exc.response.status_code
-                    except Exception as exc:  # noqa: BLE001
-                        jobs, error = [], type(exc).__name__
+                    for candidate in tries:
+                        try:
+                            jobs = await adapter(client, candidate, want_desc)
+                            error = None
+                        except httpx.HTTPStatusError as exc:
+                            jobs, error = [], "HTTP %d" % exc.response.status_code
+                        except Exception as exc:  # noqa: BLE001
+                            jobs, error = [], type(exc).__name__
+                        if jobs:
+                            token = candidate
+                            break
 
                 if error:
                     totals["failed"] += 1
@@ -128,6 +163,13 @@ async def main() -> None:
 
                 totals["ok"] += 1
                 kept = 0
+                if max_per_board and delta.enabled:
+                    # A cap keeps the first N in whatever order the board's API
+                    # happened to return. That order is not guaranteed stable,
+                    # so between runs the capped set can shift and the diff
+                    # invents jobs that opened and closed. Sorting first makes
+                    # the same N jobs qualify every run.
+                    jobs = sorted(jobs, key=lambda j: str(j.get("jobId") or ""))
                 for item in jobs:
                     if max_per_board and kept >= max_per_board:
                         break
@@ -154,16 +196,36 @@ async def main() -> None:
                     if not want_desc:
                         item.pop("description", None)
 
+                    kept += 1
+                    # `see` records the job either way; it returns False only
+                    # for a job we already reported on an earlier run.
+                    if not delta.see(item):
+                        continue
+
                     await Actor.push_data(item)
                     await charge("apify-default-dataset-item")
-                    kept += 1
                     totals["jobs"] += 1
 
                 Actor.log.info("%s: %d job(s) kept out of %d found" % (token, kept, len(jobs)))
 
-            await asyncio.gather(*(handle(t) for t in boards))
+            await asyncio.gather(*(handle(e) for e in raw_entries))
 
-        await Actor.set_status_message(
-            "Done. %d jobs from %d Greenhouse board(s) (%d not found)."
-            % (totals["jobs"], totals["ok"], totals["failed"])
-        )
+        closed = delta.closed()
+        for row in closed:
+            await Actor.push_data(row)
+            await charge("apify-default-dataset-item")
+        await delta.save()
+
+        if not delta.enabled:
+            summary = ("Done. %d jobs from %d Greenhouse board(s) (%d not found)."
+                       % (totals["jobs"], totals["ok"], totals["failed"]))
+        elif delta.is_baseline:
+            summary = ("Baseline recorded: %d jobs from %d Greenhouse board(s). "
+                       "The next run returns only changes."
+                       % (totals["jobs"], totals["ok"]))
+        else:
+            summary = ("%d new, %d closed, across %d Greenhouse board(s)."
+                       % (totals["jobs"], len(closed), totals["ok"]))
+        await Actor.set_status_message(summary)
+
+
