@@ -17,6 +17,7 @@ import httpx
 from apify import Actor
 
 from .ats import ADAPTERS, REMOTE_HINT, normalize_token, token_variants
+from .delta import DeltaTracker
 
 ATS = "lever"
 _TOKEN_FROM_URL = re.compile(r"jobs\.lever\.co/([\w.-]+)", re.I)
@@ -87,6 +88,25 @@ async def main() -> None:
         posted_days = int(cfg.get("postedWithinDays", 0)) or None
         concurrency = max(1, min(int(cfg.get("concurrency", 5)), 20))
 
+        # Keyed on everything that changes which jobs qualify, so tweaking a
+        # filter starts a clean baseline instead of reporting the jobs you
+        # stopped asking about as newly closed.
+        delta = DeltaTracker(
+            enabled=cfg.get("onlyNewSinceLastRun", False),
+            config={
+                "ats": ATS,
+                "boards": sorted(boards),
+                "titleKeywords": cfg.get("titleKeywords") or [],
+                "excludeKeywords": cfg.get("excludeKeywords") or [],
+                "locations": cfg.get("locations") or [],
+                "departments": cfg.get("departments") or [],
+                "remoteOnly": remote_only,
+                "postedWithinDays": posted_days,
+                "maxJobsPerBoard": max_per_board,
+            },
+        )
+        await delta.load()
+
         cutoff = (
             datetime.now(timezone.utc) - timedelta(days=posted_days)
             if posted_days else None
@@ -143,6 +163,13 @@ async def main() -> None:
 
                 totals["ok"] += 1
                 kept = 0
+                if max_per_board and delta.enabled:
+                    # A cap keeps the first N in whatever order the board's API
+                    # happened to return. That order is not guaranteed stable,
+                    # so between runs the capped set can shift and the diff
+                    # invents jobs that opened and closed. Sorting first makes
+                    # the same N jobs qualify every run.
+                    jobs = sorted(jobs, key=lambda j: str(j.get("jobId") or ""))
                 for item in jobs:
                     if max_per_board and kept >= max_per_board:
                         break
@@ -169,16 +196,35 @@ async def main() -> None:
                     if not want_desc:
                         item.pop("description", None)
 
+                    kept += 1
+                    # `see` records the job either way; it returns False only
+                    # for a job we already reported on an earlier run.
+                    if not delta.see(item):
+                        continue
+
                     await Actor.push_data(item)
                     await charge("apify-default-dataset-item")
-                    kept += 1
                     totals["jobs"] += 1
 
                 Actor.log.info("%s: %d job(s) kept out of %d found" % (token, kept, len(jobs)))
 
             await asyncio.gather(*(handle(e) for e in raw_entries))
 
-        await Actor.set_status_message(
-            "Done. %d jobs from %d Lever board(s) (%d not found)."
-            % (totals["jobs"], totals["ok"], totals["failed"])
-        )
+        closed = delta.closed()
+        for row in closed:
+            await Actor.push_data(row)
+            await charge("apify-default-dataset-item")
+        await delta.save()
+
+        if not delta.enabled:
+            summary = ("Done. %d jobs from %d Lever board(s) (%d not found)."
+                       % (totals["jobs"], totals["ok"], totals["failed"]))
+        elif delta.is_baseline:
+            summary = ("Baseline recorded: %d jobs from %d Lever board(s). "
+                       "The next run returns only changes."
+                       % (totals["jobs"], totals["ok"]))
+        else:
+            summary = ("%d new, %d closed, across %d Lever board(s)."
+                       % (totals["jobs"], len(closed), totals["ok"]))
+        await Actor.set_status_message(summary)
+
