@@ -2,7 +2,7 @@
   "actorSpecification": 1,
   "name": "ashby-jobs-scraper",
   "title": "Ashby Jobs Scraper - Every Opening From Any Ashby Board",
-  "description": "Pull live job openings straight from any Ashby job board via the official public API, including published salary ranges. Give it company slugs, get every role with team, location and apply link. No proxy, no API key.",
+  "description": "A company that is hiring is a company that is spending. Pull every live opening from any Ashby board via the official public API, published salary ranges included. Paste a company domain - no board slug to look up.",
   "version": "0.0",
   "buildTag": "latest",
   "meta": {
