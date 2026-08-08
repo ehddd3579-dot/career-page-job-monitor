@@ -293,8 +293,19 @@ async def main() -> None:
                 if error:
                     totals["failed"] += 1
                     Actor.log.warning("%s: %s" % (token, error))
+                    # companyName and title are filled in deliberately. The
+                    # dataset view is a table of job columns, and this row used
+                    # to carry none of them - only `error` and `hint`, neither
+                    # of which the view shows. The result was a row that looked
+                    # completely blank: the caller could see that something had
+                    # gone wrong but not what, or for which company. Saying it
+                    # in the two columns they are already reading costs nothing
+                    # and is the difference between an explanation and a
+                    # mystery.
                     await Actor.push_data({
                         "recordType": "notFound",
+                        "companyName": token,
+                        "title": "Not found on Greenhouse - see the hint column",
                         "boardToken": token,
                         "ats": ATS,
                         "error": error,
