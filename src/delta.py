@@ -34,25 +34,41 @@ from apify import Actor
 # Named stores persist between runs; the default (unnamed) store is wiped with
 # the run that created it, which would make every run look like the first one.
 #
-# The name has to be per-Actor. Actors run under limited permissions by
-# default, and a limited Actor may only touch named storages it created
-# itself. Every Actor here originally asked for the same
-# "ats-job-monitor-state"; the first one to run created it, and the other five
-# then got a ForbiddenError on open. That failure is caught below, so nothing
-# crashed - change detection just quietly degraded to "everything is new" on
-# every run, which bills the caller for the whole board daily instead of the
-# handful of roles that actually moved. Silent and expensive is the worst
-# combination, so the store is namespaced and the fallback is explicit.
+# The name has to be per-Actor. Actors run under limited permissions, and a
+# limited Actor may only touch named storages it created itself. Every Actor
+# here originally asked for the same "ats-job-monitor-state"; the first one to
+# run created it and the rest got a ForbiddenError on open. The except below
+# catches that, so nothing crashed - change detection just quietly degraded to
+# "everything is new" on every run, billing the caller for the whole board
+# daily instead of the handful of roles that actually moved.
+#
+# This took two attempts. The first added the suffix but read the Actor id
+# from `get_env()["actor_id"]`, which does not exist: `get_env()` is keyed by
+# option name, so the id is under "id" and APIFY_ACTOR_ID is merely the
+# variable it was read from. The lookup returned None on every run, the code
+# fell through to the bare prefix, and the fix shipped, built, and did
+# nothing. Its test agreed with it only because the test fed the same wrong
+# key to a fake. So: both keys are read here, and tests/delta_test.py now
+# shapes its fake env like a real one and asserts the namespacing actually
+# happens rather than that the function was called.
 STORE_PREFIX = "ats-job-monitor-state"
+_ID_KEYS = ("id", "actor_id")
 
 
 def store_name() -> str:
     """A store name unique to this Actor, stable across its runs."""
     try:
-        actor_id = (Actor.get_env() or {}).get("actor_id")
+        env = Actor.get_env() or {}
     except Exception:  # noqa: BLE001 - env is absent outside the platform
-        actor_id = None
-    return f"{STORE_PREFIX}-{actor_id}" if actor_id else STORE_PREFIX
+        env = {}
+    actor_id = next((env.get(k) for k in _ID_KEYS if env.get(k)), None)
+    if not actor_id:
+        return STORE_PREFIX
+    # Real Actor ids are mixed case (HxYLsL6iMYguw8v4h) and store names are
+    # not, so the id is hashed rather than appended. A hash is also stable,
+    # short, and cannot collide with the prefix of another name.
+    digest = hashlib.sha256(str(actor_id).encode("utf-8")).hexdigest()[:12]
+    return f"{STORE_PREFIX}-{digest}"
 
 # Kept per remembered job. Enough to make a "this closed" row actionable
 # without turning the snapshot into a second copy of the dataset.
@@ -112,7 +128,9 @@ class DeltaTracker:
         except Exception as exc:  # noqa: BLE001
             # A storage problem must not cost the caller their run. Falling
             # back to "everything is new" returns more than they asked for,
-            # which is recoverable; crashing is not.
+            # which is recoverable; crashing is not. But it is not free
+            # either - the caller pays per row - so say plainly what it will
+            # cost rather than logging a tidy one-liner nobody reads.
             Actor.log.warning(
                 "Could not read the previous snapshot (%s). This run returns "
                 "the whole board and bills for it, instead of only what "
@@ -195,6 +213,3 @@ class DeltaTracker:
                 "Could not save the snapshot (%s). The next run will start a "
                 "fresh baseline." % type(exc).__name__
             )
-
-
-
