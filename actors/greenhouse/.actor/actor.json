@@ -2,7 +2,7 @@
   "actorSpecification": 1,
   "name": "greenhouse-jobs-scraper",
   "title": "Greenhouse Jobs Scraper - Every Opening From Any Greenhouse Board",
-  "description": "Pull live job openings straight from any Greenhouse job board via the official public API, with departments joined in. Give it company slugs, get every role with title, department, location and apply link. No proxy, no API key.",
+  "description": "A company that is hiring is a company that is spending. Pull every live opening from any Greenhouse board via the official public API, with departments joined in. Paste a company domain - no board token to look up.",
   "version": "0.0",
   "buildTag": "latest",
   "meta": {
