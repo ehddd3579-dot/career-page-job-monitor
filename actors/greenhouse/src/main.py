@@ -53,6 +53,95 @@ def parse_board(raw: Any) -> str:
     return normalize_token(text)
 
 
+def read_boards(cfg: dict) -> list:
+    """Turn whatever arrived in `boards` into a clean, deduplicated list.
+
+    Every branch here is something a real caller sent, and every one of them
+    used to be charged for:
+
+    * A bare string. `"boards": "stripe"` looks obviously right when you are
+      writing JSON by hand against the API. Python iterates it one character
+      at a time, so the run fetched six boards named s, t, r, i, p, e and
+      billed for six.
+    * Duplicates. A pasted list with the same company twice - or once as
+      `Stripe` and once as `stripe` - was fetched twice, charged twice, and
+      returned every job twice.
+    * Junk entries. A stray `null` or a number in the array became a board
+      token via `str()` and went out to the network as one.
+
+    None of those are the caller being careless with someone else's money;
+    they are the caller being careless with their own, which is worse.
+    """
+    raw = cfg.get("boards")
+    if raw is None:
+        raw = []
+    if isinstance(raw, (str, bytes)):
+        # One string is one entry - or several, if they separated them the way
+        # a text box invites. Never a sequence of characters.
+        raw = [p for p in re.split(r"[,\n]", str(raw)) if p.strip()]
+    elif isinstance(raw, dict):
+        raw = [raw]
+    elif not isinstance(raw, (list, tuple)):
+        raw = [raw]
+
+    entries, tokens, seen, skipped, dupes = [], [], set(), [], 0
+    for entry in raw:
+        if isinstance(entry, bool) or isinstance(entry, (int, float)):
+            # A number is never a board token. Sending it anyway turns a typo
+            # into a paid request.
+            skipped.append(repr(entry))
+            continue
+        token = parse_board(entry)
+        if not token:
+            if entry not in (None, "", [], {}):
+                skipped.append(repr(entry))
+            continue
+        key = token.lower()
+        if key in seen:
+            dupes += 1
+            continue
+        seen.add(key)
+        # The original entry is kept, not the parsed token: a pasted domain
+        # carries spellings the token does not, and the fetch loop tries those
+        # variants before giving up.
+        entries.append(entry)
+        tokens.append(token)
+
+    if skipped:
+        Actor.log.warning(
+            "Ignored %d entry/entries in 'boards' that are not usable tokens: "
+            "%s. Nothing was fetched or charged for them."
+            % (len(skipped), ", ".join(skipped[:5]))
+        )
+    if dupes:
+        Actor.log.info(
+            "Removed %d duplicate compan%s from 'boards'; each board is "
+            "fetched and charged once."
+            % (dupes, "y" if dupes == 1 else "ies")
+        )
+    return entries, tokens
+
+
+def read_int(cfg: dict, key: str, default: int = 0) -> int:
+    """A number field that survives a caller typing words into it.
+
+    The Actor input form constrains these, but the API does not, and a
+    `ValueError: invalid literal for int()` traceback tells the caller nothing
+    about which field they got wrong.
+    """
+    value = cfg.get(key, default)
+    if value in (None, ""):
+        return default
+    try:
+        return int(float(value))
+    except (TypeError, ValueError):
+        Actor.log.warning(
+            "'%s' is not a number (got %r) - ignoring it and using %d."
+            % (key, value, default)
+        )
+        return default
+
+
 def compile_terms(terms: list) -> list:
     return [re.compile(re.escape(str(t).strip()), re.I) for t in terms if str(t).strip()]
 
@@ -85,8 +174,7 @@ async def main() -> None:
     async with Actor:
         cfg = await Actor.get_input() or {}
 
-        raw_entries = [b for b in (cfg.get("boards") or []) if parse_board(b)]
-        boards = [parse_board(b) for b in raw_entries]
+        raw_entries, boards = read_boards(cfg)
         if not boards:
             raise ValueError(
                 "Input 'boards' is empty. Add Greenhouse board tokens - the company slug in job-boards.greenhouse.io/<company>."
@@ -98,13 +186,29 @@ async def main() -> None:
         dept_terms = compile_terms(cfg.get("departments") or [])
         remote_only = bool(cfg.get("remoteOnly", False))
         want_desc = bool(cfg.get("includeDescription", False))
-        max_per_board = int(cfg.get("maxJobsPerBoard", 0)) or None
-        posted_days = int(cfg.get("postedWithinDays", 0)) or None
-        concurrency = max(1, min(int(cfg.get("concurrency", 5)), 20))
+        # 0 means no limit. A negative used to slip through and slice the
+        # list to nothing, so the run "succeeded" with zero rows and no
+        # explanation - treat it as the no-limit it was meant to be.
+        max_per_board = read_int(cfg, "maxJobsPerBoard", 0)
+        if max_per_board < 0:
+            Actor.log.warning(
+                "'maxJobsPerBoard' was %d; a negative limit is read as no "
+                "limit rather than as zero jobs." % max_per_board
+            )
+        max_per_board = max_per_board if max_per_board > 0 else None
+        posted_days = read_int(cfg, "postedWithinDays", 0)
+        posted_days = posted_days if posted_days > 0 else None
+        concurrency = max(1, min(read_int(cfg, "concurrency", 5) or 5, 20))
         # "jobs" is one row per opening, "companies" is one row per board,
         # "both" is the job rows followed by the summaries.
         output_mode = str(cfg.get("outputMode", "jobs")).strip().lower()
         if output_mode not in ("jobs", "companies", "both"):
+            # Silently returning jobs to someone who asked for companies looks
+            # like the feature is broken rather than like a typo.
+            Actor.log.warning(
+                "'outputMode' was %r, which is not one of jobs / companies / "
+                "both. Returning jobs." % cfg.get("outputMode")
+            )
             output_mode = "jobs"
         want_jobs = output_mode in ("jobs", "both")
         want_summary = output_mode in ("companies", "both")
@@ -295,6 +399,3 @@ async def main() -> None:
             summary = ("%d new, %d closed, across %d Greenhouse board(s)."
                        % (totals["jobs"], len(closed), totals["ok"]))
         await Actor.set_status_message(summary)
-
-
-
