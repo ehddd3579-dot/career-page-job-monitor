@@ -2,7 +2,7 @@
   "actorSpecification": 1,
   "name": "career-page-job-monitor",
   "title": "ATS Job Scraper - Greenhouse, Lever, Ashby, Workable, Recruitee",
-  "description": "You name the companies, it returns their live job openings. Auto-detects Greenhouse, Lever, Ashby, Workable, Recruitee and SmartRecruiters, and normalises all six into one schema. No proxy, no API key.",
+  "description": "A company that is hiring is a company that is spending. Name the companies, get their live openings - Greenhouse, Lever, Ashby, Workable, Recruitee and SmartRecruiters auto-detected and normalised into one schema. No board tokens to look up.",
   "version": "0.0",
   "buildTag": "latest",
   "meta": { "templateId": "python-empty" },
