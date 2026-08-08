@@ -1,2 +1,107 @@
-{"actorSpecification":1,"fields":{},"views":{"overview":{"title":"Job openings","transformation":{"fields":["companyName","ats","title","department","team","employmentType","location","isRemote","workplaceType","salary","publishedAt","jobUrl","applyUrl","jobId","boardToken","updatedAt","globalId","isNew","isClosed"]},"display":{"component":"table","properties":{"companyName":{"label":"Company"},"ats":{"label":"Platform"},"title":{"label":"Job title"},"department":{"label":"Department"},"team":{"label":"Team"},"employmentType":{"label":"Type"},"location":{"label":"Location"},"isRemote":{"label":"Remote","format":"boolean"},"workplaceType":{"label":"Workplace"},"salary":{"label":"Salary"},"publishedAt":{"label":"Posted","format":"date"},"jobUrl":{"label":"Link","format":"link"},"applyUrl":{"label":"Apply","format":"link"},"updatedAt":{"label":"Updated","format":"date"},"globalId":{"label":"Join key"},"isNew":{"label":"New","format":"boolean"},"isClosed":{"label":"Closed","format":"boolean"}}}},"companies":{"title":"Hiring signal by company","transformation":{"fields":["companyName","ats","openRoles","newRoles","closedRoles","netChange","roleFamilies","seniorityMix","departments","locations","remoteRoles","rolesWithPublishedSalary","newestPostedAt","sampleTitles","boardToken"]},"display":{"component":"table","properties":{"companyName":{"label":"Company"},"ats":{"label":"Platform"},"openRoles":{"label":"Open roles"},"newRoles":{"label":"Opened since last run"},"closedRoles":{"label":"Closed since last run"},"netChange":{"label":"Net change"},"roleFamilies":{"label":"By function (inferred)"},"seniorityMix":{"label":"By level (inferred)"},"departments":{"label":"By department (published)"},"locations":{"label":"By location"},"remoteRoles":{"label":"Remote"},"rolesWithPublishedSalary":{"label":"With salary"},"newestPostedAt":{"label":"Newest posting","format":"date"},"sampleTitles":{"label":"Example titles"},"boardToken":{"label":"Board token"}}}}}}
-
+{
+  "actorSpecification": 1,
+  "fields": {},
+  "views": {
+    "overview": {
+      "title": "Job openings",
+      "transformation": {
+        "fields": [
+          "companyName",
+          "ats",
+          "title",
+          "department",
+          "team",
+          "employmentType",
+          "location",
+          "isRemote",
+          "workplaceType",
+          "salary",
+          "publishedAt",
+          "jobUrl",
+          "applyUrl",
+          "jobId",
+          "boardToken",
+          "updatedAt",
+          "globalId",
+          "isNew",
+          "isClosed",
+          "recordType",
+          "hint",
+          "error"
+        ]
+      },
+      "display": {
+        "component": "table",
+        "properties": {
+          "companyName": {
+            "label": "Company"
+          },
+          "ats": {
+            "label": "Platform"
+          },
+          "title": {
+            "label": "Job title"
+          },
+          "department": {
+            "label": "Department"
+          },
+          "team": {
+            "label": "Team"
+          },
+          "employmentType": {
+            "label": "Type"
+          },
+          "location": {
+            "label": "Location"
+          },
+          "isRemote": {
+            "label": "Remote",
+            "format": "boolean"
+          },
+          "workplaceType": {
+            "label": "Workplace"
+          },
+          "salary": {
+            "label": "Salary"
+          },
+          "publishedAt": {
+            "label": "Posted",
+            "format": "date"
+          },
+          "jobUrl": {
+            "label": "Link",
+            "format": "link"
+          },
+          "applyUrl": {
+            "label": "Apply",
+            "format": "link"
+          },
+          "updatedAt": {
+            "label": "Updated",
+            "format": "date"
+          },
+          "globalId": {
+            "label": "Join key"
+          },
+          "isNew": {
+            "label": "New",
+            "format": "boolean"
+          },
+          "isClosed": {
+            "label": "Closed",
+            "format": "boolean"
+          },
+          "recordType": {
+            "label": "Row type"
+          },
+          "hint": {
+            "label": "Why not found"
+          },
+          "error": {
+            "label": "Error"
+          }
+        }
+      }
+    }
+  }
+}
