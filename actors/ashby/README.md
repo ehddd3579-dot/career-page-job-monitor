@@ -172,6 +172,17 @@ company, in a row you can read rather than a silent gap.
 
 ---
 
+## How this works, in full
+
+Ashby's endpoint above is public and documented, and so are the other five.
+If you would rather build it yourself than pay for it, the whole method is
+written up here — every endpoint, and the four traps that cost the most time:
+
+**[Six ATS platforms publish their job boards as open JSON. Here are the
+endpoints.](https://dev.to/udaninn/six-ats-platforms-publish-their-job-boards-as-open-json-here-are-the-endpoints-2d3k)**
+
+---
+
 ## Support
 
 A board that will not resolve? Open an issue on the **Issues** tab with the
