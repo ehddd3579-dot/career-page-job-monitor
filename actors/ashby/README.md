@@ -1,6 +1,6 @@
 # Ashby Jobs Scraper - Every Opening From Any Ashby Board
 
-**Pull live job openings straight from any Ashby job board via the official public API, including published salary ranges. Give it company slugs, get every role with team, location and apply link. No proxy, no API key.**
+**A company that is hiring is a company that is spending. Pull every live opening from any Ashby board via the official public API, published salary ranges included. Paste a company domain - no board slug to look up.**
 
 ---
 
@@ -22,15 +22,16 @@ Ashby is the richest of the platforms: department, team, employment type, workpl
 
 ```json
 {
-  "boards": ["ramp", "https://jobs.ashbyhq.com/1x"],
+  "boards": ["ramp.com", "https://jobs.ashbyhq.com/1x"],
   "titleKeywords": ["engineer"],
   "locations": ["Remote"],
   "postedWithinDays": 7
 }
 ```
 
-The board token is **the company slug in jobs.ashbyhq.com/<company>**. You can paste the full careers URL instead
-and it will pull the token out for you.
+The board token is **the company slug in jobs.ashbyhq.com/<company>** — but you rarely need to look it up.
+Paste the company **domain** (`acme.com`, `www.acme.com`) or the full careers URL
+and the Actor pulls the company name out for you.
 
 | Field | Default | Notes |
 |---|---|---|
@@ -42,7 +43,8 @@ and it will pull the token out for you.
 | `remoteOnly` | `false` | Remote positions only. |
 | `postedWithinDays` | `0` | `0` = no limit. Set `1` for a daily new-jobs feed. |
 | `includeDescription` | `false` | Adds full description text. Much larger results. |
-| `maxJobsPerBoard` | `0` | `0` = no limit. |
+| `onlyNewSinceLastRun` | `false` | Return only what opened or closed since the last run. |
+| `maxJobsPerBoard` | `0` | `0` = no limit. The console starts at `10` so a first trial run stays cheap. |
 | `concurrency` | `5` | Boards fetched in parallel. |
 
 ---
@@ -62,6 +64,7 @@ One row per opening:
 | `salary` | Compensation range, when published |
 | `publishedAt`, `updatedAt` | ISO 8601 timestamps |
 | `jobUrl`, `applyUrl` | Public posting and application links |
+| `globalId` | `{ats}:{token}:{jobId}` — stable key for joining and deduping |
 | `description` | Full text, only when requested |
 
 Export as **Excel, CSV, JSON or XML**, or pull it through the API.
@@ -71,11 +74,32 @@ token never silently vanishes from your results.
 
 ---
 
-## Daily new-jobs feed
+## Monitoring: only what changed
 
-Schedule it once a day with `postedWithinDays: 1` and you get a clean feed of
-roles opened in the last 24 hours across every board you track. Wire it to Slack,
-Google Sheets or your CRM through Apify integrations.
+Set **`onlyNewSinceLastRun: true`** and schedule it. The first run records a
+baseline and returns everything. Every run after that returns only:
+
+- jobs that **opened** since your last run — `isNew: true`
+- jobs that have since **closed** — `isClosed: true`
+
+A morning with no hiring activity returns **nothing at all** and costs only the
+start fee. You are never billed for re-reading a job you already saw.
+
+Two things worth knowing:
+
+- **Changing the boards or filters starts a fresh baseline.** Otherwise every
+  job you stopped asking about would be reported as newly closed, which is a
+  wrong answer rather than a noisy one.
+- **A closed row carries what was recorded when the job was last seen** —
+  company, title and link. Once a posting is gone there is nothing left to
+  re-read, so the remaining fields are omitted rather than shown stale.
+
+### Without monitoring
+
+`postedWithinDays: 1` also gives you a daily feed, based on each board's own
+posted date. It is simpler, but it cannot tell you when a role closed, and it
+depends on the company having set a date at all. Use `onlyNewSinceLastRun` if
+you care about either.
 
 ---
 
@@ -94,6 +118,57 @@ Google Sheets or your CRM through Apify integrations.
   multi-platform version of this Actor.
 - Boards set to private or password-protected are not accessible.
 - `department` and `team` are only as good as what the company fills in.
+
+---
+
+## The endpoint this reads
+
+```
+https://api.ashbyhq.com/posting-api/job-board/<company>
+```
+
+That is Ashby's own public board API - the one that fills its customers'
+careers pages. It needs no key, no login and no proxy, which is why this Actor
+does not use any.
+
+---
+
+## FAQ
+
+**Does Ashby have a public jobs API?**
+Yes, for job boards. The endpoint above returns the live postings for one
+company as JSON. It is public because the careers page itself is public.
+
+**Do I need an API key, a login, or a proxy?**
+No. None of the three.
+
+**Where do I find the board token?**
+You do not have to. Paste the company's domain, the URL of any job posting, or
+the identifier itself - `ramp.com` is a working example - and this Actor
+resolves it. If you already know the token - the company slug in jobs.ashbyhq.com/<company> - that works too.
+
+**Why would I use this instead of calling the endpoint myself?**
+For one company, you probably should not - it is one HTTP request, and this
+README just told you the URL. This Actor earns its keep at the point where that
+stops being true: dozens of companies at once, tokens you would otherwise have
+to look up by hand, a flat schema shared across six ATS platforms, a
+`globalId` you can join on, and a mode that returns only what changed since the
+last run instead of the whole board every morning.
+
+**Can I get only the jobs that opened or closed since last time?**
+Yes. Set `onlyNewSinceLastRun` to true and each run returns the new postings,
+plus a row for every posting that disappeared. See the monitoring section above.
+
+**What does a run cost?**
+You pay per row returned - about a tenth of a cent each - plus a fraction of a
+cent to start the run. A company with 40 openings lands around five cents. With
+`onlyNewSinceLastRun` on, a scheduled daily run usually returns a handful of
+rows rather than the whole board.
+
+**A company is not found. Why?**
+Either it is not on Ashby - most large enterprises use Workday, Taleo, iCIMS
+or SuccessFactors - or its board is private. The run tells you which, per
+company, in a row you can read rather than a silent gap.
 
 ---
 
