@@ -92,7 +92,8 @@ out and finds the board itself.
 | `remoteOnly` | `false` | Remote positions only. |
 | `postedWithinDays` | `0` | `0` = no limit. Set `1` for a daily new-jobs feed. |
 | `includeDescription` | `false` | Adds full description text. Much larger results. |
-| `maxJobsPerCompany` | `0` | `0` = no limit. |
+| `onlyNewSinceLastRun` | `false` | Return only what opened or closed since the last run. |
+| `maxJobsPerCompany` | `0` | `0` = no limit. The console starts at `10` so a first trial run stays cheap. |
 | `concurrency` | `5` | Companies fetched in parallel. |
 
 ---
@@ -112,6 +113,7 @@ One item per opening, identical shape no matter which platform it came from:
 | `salary` | Compensation range, when the company publishes it |
 | `publishedAt`, `updatedAt` | ISO 8601, normalised across all six platforms |
 | `jobUrl`, `applyUrl` | Public posting and application links |
+| `globalId` | `{ats}:{token}:{jobId}` — stable key for joining and deduping |
 | `description` | Full text, only when requested |
 
 Export as **Excel, CSV, JSON or XML**, or pull it through the API.
@@ -131,11 +133,31 @@ so a bad token never silently vanishes from your results.
 - **Job hunting** — follow the 60 companies you would actually join, filtered to
   your title and location.
 
-### Daily hiring-signal recipe
+### Monitoring: only what changed
 
-Schedule it once a day with `postedWithinDays: 1` and you get a clean feed of
-roles opened in the last 24 hours across every company you track. Wire it to
-Slack, Google Sheets or your CRM through Apify integrations.
+Set **`onlyNewSinceLastRun: true`** and schedule it. The first run records a
+baseline and returns everything. Every run after that returns only:
+
+- roles that **opened** since your last run — `isNew: true`
+- roles that have since **closed** — `isClosed: true`
+
+A morning with no hiring activity returns **nothing at all** and costs only the
+start fee. You are never billed for re-reading a job you already saw. Wire it to
+Slack, Google Sheets or your CRM through Apify integrations and it stays quiet
+until an account actually moves.
+
+Two things worth knowing:
+
+- **Changing the companies or filters starts a fresh baseline.** Otherwise every
+  job you stopped asking about would be reported as newly closed, which is a
+  wrong answer rather than a noisy one.
+- **A closed row carries what was recorded when the job was last seen** —
+  company, title and link. Once a posting is gone there is nothing left to
+  re-read, so the remaining fields are omitted rather than shown stale.
+
+`postedWithinDays: 1` also gives you a daily feed, based on each company's own
+posted date. It is simpler, but it cannot tell you when a role closed, and it
+depends on the company having set a date at all.
 
 ---
 
@@ -167,6 +189,20 @@ omits them from its jobs endpoint. Postings that cannot be read are skipped and
 Pay per event: a small start fee per run, plus a charge per job returned.
 Companies that return no jobs cost only the start fee. Platform usage is
 included — you are not billed for compute on top.
+
+---
+
+## How this works, in full
+
+The six endpoints this reads are public and documented. If you would rather
+build it yourself than pay for it, the whole method is written up here — every
+endpoint, and the four traps that cost the most time:
+
+**[Six ATS platforms publish their job boards as open JSON. Here are the
+endpoints.](https://dev.to/udaninn/six-ats-platforms-publish-their-job-boards-as-open-json-here-are-the-endpoints-2d3k)**
+
+For one company you probably should build it yourself — it is a single HTTP
+request. This Actor earns its keep at the point where that stops being true.
 
 ---
 
