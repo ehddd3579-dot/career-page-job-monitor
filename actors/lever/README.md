@@ -1,5 +1,7 @@
 # Lever Jobs Scraper - Every Opening From Any Lever Board
 
+![Sample output table](https://raw.githubusercontent.com/udaninn/career-page-job-monitor/main/docs/output-sample.svg)
+
 **A company that is hiring is a company that is spending. Pull every live opening from any Lever board via the official public API, with team, location and commitment. Paste a company domain - no board slug to look up.**
 
 ---
