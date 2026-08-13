@@ -1,5 +1,7 @@
 # SmartRecruiters Jobs Scraper - Every Opening From Any Company
 
+![Sample output table](https://raw.githubusercontent.com/udaninn/career-page-job-monitor/main/docs/output-sample.svg)
+
 **A company that is hiring is a company that is spending. Pull every opening from any SmartRecruiters careers site via the official public API, paging through the whole board so large employers come back complete, not truncated.**
 
 ---
