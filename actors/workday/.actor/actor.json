@@ -1,0 +1,18 @@
+{
+  "actorSpecification": 1,
+  "name": "workday-jobs-scraper",
+  "title": "Workday Jobs Scraper & API - Paste Any Careers URL",
+  "description": "A company that is hiring is a company that is spending. Pull every live opening from any Workday careers site via the JSON API behind it. Paste any careers or job-posting URL - the Actor decomposes tenant, shard and site itself.",
+  "version": "0.0",
+  "buildTag": "latest",
+  "meta": {
+    "templateId": "python-empty"
+  },
+  "dockerfile": "./Dockerfile",
+  "input": "./input_schema.json",
+  "output": "./output_schema.json",
+  "storages": {
+    "dataset": "./dataset_schema.json"
+  }
+}
+
