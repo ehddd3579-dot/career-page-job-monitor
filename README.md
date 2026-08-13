@@ -2,6 +2,8 @@
 
 **You name the companies. It returns their live job openings.**
 
+![Sample output: one normalised table across all six ATS platforms](https://raw.githubusercontent.com/udaninn/career-page-job-monitor/main/docs/output-sample.svg)
+
 Give it a list of companies you actually care about. It works out which applicant
 tracking system each one uses — Greenhouse, Lever, Ashby, Workable, Recruitee or
 SmartRecruiters — reads their official public board API, and returns every opening
