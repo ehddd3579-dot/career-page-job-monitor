@@ -1,5 +1,7 @@
 # Workable Jobs Scraper - Every Opening From Any Workable Board
 
+![Sample output table](https://raw.githubusercontent.com/udaninn/career-page-job-monitor/main/docs/output-sample.svg)
+
 **A company that is hiring is a company that is spending. Pull live openings from any Workable careers page via the official public API - paste company domains, no board slugs to look up. Department, location, apply link.**
 
 ---
