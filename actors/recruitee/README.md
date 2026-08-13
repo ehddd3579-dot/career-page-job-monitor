@@ -1,5 +1,7 @@
 # Recruitee Jobs Scraper - Every Opening From Any Recruitee Site
 
+![Sample output table](https://raw.githubusercontent.com/udaninn/career-page-job-monitor/main/docs/output-sample.svg)
+
 **A company that is hiring is a company that is spending. Pull every live opening from any Recruitee careers site via the official public API, with department and location. Paste a company domain - no subdomain to look up.**
 
 ---
