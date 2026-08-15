@@ -13,6 +13,7 @@
   "output": "./output_schema.json",
   "storages": {
     "dataset": "./dataset_schema.json"
-  }
+  },
+  "usesStandbyMode": true,
+  "webServerMcpPath": "/mcp"
 }
-
