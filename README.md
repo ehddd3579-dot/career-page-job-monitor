@@ -212,3 +212,34 @@ request. This Actor earns its keep at the point where that stops being true.
 
 Missing a platform, or a company that will not resolve? Open an issue on the
 **Issues** tab with the careers URL. New adapters are quick to add.
+
+---
+
+## Run it without writing any of this
+
+Every platform above is also packaged as a hosted Actor on Apify. Same
+endpoints, same normalised schema, nothing to deploy. Each one exposes a REST
+API, so you can call it from your own code in a few lines.
+
+| Platform | Hosted Actor | Call it from |
+|---|---|---|
+| All six, auto-detected | [Actor](https://apify.com/practical_ophthalmologist_iuq/career-page-job-monitor) | [Python](https://apify.com/practical_ophthalmologist_iuq/career-page-job-monitor/api/python) · [JavaScript](https://apify.com/practical_ophthalmologist_iuq/career-page-job-monitor/api/javascript) |
+| Greenhouse | [Actor](https://apify.com/practical_ophthalmologist_iuq/greenhouse-jobs-scraper) | [Python](https://apify.com/practical_ophthalmologist_iuq/greenhouse-jobs-scraper/api/python) · [JavaScript](https://apify.com/practical_ophthalmologist_iuq/greenhouse-jobs-scraper/api/javascript) |
+| Lever | [Actor](https://apify.com/practical_ophthalmologist_iuq/lever-jobs-scraper) | [Python](https://apify.com/practical_ophthalmologist_iuq/lever-jobs-scraper/api/python) · [JavaScript](https://apify.com/practical_ophthalmologist_iuq/lever-jobs-scraper/api/javascript) |
+| Ashby | [Actor](https://apify.com/practical_ophthalmologist_iuq/ashby-jobs-scraper) | [Python](https://apify.com/practical_ophthalmologist_iuq/ashby-jobs-scraper/api/python) · [JavaScript](https://apify.com/practical_ophthalmologist_iuq/ashby-jobs-scraper/api/javascript) |
+| Workable | [Actor](https://apify.com/practical_ophthalmologist_iuq/workable-jobs-scraper) | [Python](https://apify.com/practical_ophthalmologist_iuq/workable-jobs-scraper/api/python) · [JavaScript](https://apify.com/practical_ophthalmologist_iuq/workable-jobs-scraper/api/javascript) |
+| Recruitee | [Actor](https://apify.com/practical_ophthalmologist_iuq/recruitee-jobs-scraper) | [Python](https://apify.com/practical_ophthalmologist_iuq/recruitee-jobs-scraper/api/python) · [JavaScript](https://apify.com/practical_ophthalmologist_iuq/recruitee-jobs-scraper/api/javascript) |
+| SmartRecruiters | [Actor](https://apify.com/practical_ophthalmologist_iuq/smartrecruiters-jobs-scraper) | [Python](https://apify.com/practical_ophthalmologist_iuq/smartrecruiters-jobs-scraper/api/python) · [JavaScript](https://apify.com/practical_ophthalmologist_iuq/smartrecruiters-jobs-scraper/api/javascript) |
+| Workday | [Actor](https://apify.com/practical_ophthalmologist_iuq/workday-jobs-scraper) | [Python](https://apify.com/practical_ophthalmologist_iuq/workday-jobs-scraper/api/python) · [JavaScript](https://apify.com/practical_ophthalmologist_iuq/workday-jobs-scraper/api/javascript) |
+
+Workday is a separate Actor because it is the one ATS whose address cannot be
+derived from a company name: the tenant, the `wd` shard and the site name are
+each set per customer, so you need a real link from the careers site.
+
+## Write-ups
+
+The full method for each platform, including the traps that cost the most time:
+
+- [Six ATS platforms publish their job boards as open JSON](https://dev.to/udaninn/six-ats-platforms-publish-their-job-boards-as-open-json-here-are-the-endpoints-2d3k)
+- [Workday job boards have a JSON API too](https://dev.to/udaninn/workday-job-boards-have-a-json-api-too-its-just-better-hidden-23fl)
+- [Telling which ATS a company uses from its careers URL](https://dev.to/udaninn/you-can-tell-which-ats-a-company-uses-by-looking-at-its-careers-url-3i5g)
